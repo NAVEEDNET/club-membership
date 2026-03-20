@@ -1,0 +1,86 @@
+@extends('layouts.admin')
+
+@section('title', 'View Members')
+@section('page-title', 'Members List')
+
+@section('content')
+
+@if(session('success'))
+    <div class="alert alert-success">
+        {{ session('success') }}
+    </div>
+@endif
+
+<div class="card shadow">
+    <div class="card-header bg-dark text-white d-flex justify-content-between">
+        <span>All Members</span>
+        <a href="{{ route('admin.members.create') }}" class="btn btn-sm btn-success">
+            + Add Member
+        </a>
+    </div>
+
+    <div class="card-body table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Photo</th>
+                    <th>Member ID</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th width="180">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($members as $key => $member)
+                <tr>
+                    <td>{{ $key + 1 }}</td>
+
+                    <td>
+                        @if($member->photo)
+                            <img src="{{ asset('storage/' . $member->photo) }}"
+                                 width="50" height="50"
+                                 class="rounded-circle">
+                        @else
+                            <span class="text-muted">No Photo</span>
+                        @endif
+                    </td>
+
+                    <td>{{ $member->member_id }}</td>
+                    <td>{{ $member->full_name }}</td>
+                    <td>{{ $member->membership_type }}</td>
+                    <td>{{ $member->email ?? '-' }}</td>
+
+                    <td>
+                        @if($member->status == 'active')
+                            <span class="badge bg-success">Active</span>
+                        @else
+                            <span class="badge bg-danger">Expired</span>
+                        @endif
+                    </td>
+
+                    <td>
+                        <a href="{{ route('admin.members.show', $member->id) }}" class="btn btn-sm btn-info">View</a>
+                        <a href="{{ route('admin.members.edit', $member->id) }}" class="btn btn-sm btn-warning">Edit</a>
+                        <form action="{{ route('admin.members.destroy', $member->id) }}" method="POST" style="display:inline;">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete this member?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="8" class="text-center text-muted">
+                        No members found
+                    </td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@endsection

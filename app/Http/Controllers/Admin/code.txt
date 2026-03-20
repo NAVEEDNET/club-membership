@@ -1,0 +1,178 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Member;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
+
+
+class MemberController extends Controller
+{
+    // Show add member form
+    public function create()
+    {
+        return view('admin.members.create');
+    }
+
+    // Store member
+   public function store(Request $request)
+{
+    // 1️⃣ Validate
+    $validated = $request->validate([
+        'full_name'        => 'required|string|max:255',
+        'nic'              => 'nullable|string|max:50',
+        'date_of_birth'    => 'nullable|date',
+        'membership_type'  => 'required|string|max:50',
+        'email'            => 'nullable|email',
+        'phone'            => 'nullable|string|max:20',
+        'address'          => 'nullable|string',
+        'start_date'       => 'required|date',
+        'expiry_date'      => 'required|date|after:start_date',
+        'photo'            => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+    ]);
+
+    try {
+        // 2️⃣ Generate Member ID (MB001)
+        $lastMember = Member::latest('id')->first();
+        $nextId = $lastMember ? $lastMember->id + 1 : 1;
+        $memberId = 'MB' . str_pad($nextId, 3, '0', STR_PAD_LEFT);
+
+        // 3️⃣ Upload Photo (if exists)
+        $photoPath = null;
+        if ($request->hasFile('photo')) {
+            $photoPath = $request->file('photo')
+                ->store('members/photos', 'public');
+        }
+
+        // 4️⃣ Save Member first
+        $member = Member::create([
+            'member_id'        => $memberId,
+            'full_name'        => $validated['full_name'],
+            'nic'              => $validated['nic'] ?? null,
+            'date_of_birth'    => $validated['date_of_birth'] ?? null,
+            'membership_type'  => $validated['membership_type'],
+            'email'            => $validated['email'] ?? null,
+            'phone'            => $validated['phone'] ?? null,
+            'address'          => $validated['address'] ?? null,
+            'photo'            => $photoPath,
+            'start_date'       => $validated['start_date'],
+            'expiry_date'      => $validated['expiry_date'],
+            'status'           => 'active',
+        ]);
+
+        // Member saved successfully - log it
+        \Log::info('Member created: ID=' . $member->id . ', Member ID=' . $memberId);
+
+        // 5️⃣ Generate QR Code (optional - don't fail if this errors)
+        try {
+            $qrData = route('admin.members.show', $member->id);
+            $qrFileName = 'member_' . $member->id . '.png';
+            $qrPath = storage_path('app/public/storage/qr-codes/' . $qrFileName);
+
+            // Ensure directory exists
+            @mkdir(dirname($qrPath), 0755, true);
+
+            // Generate QR code and save to file
+            $qrCode = QrCode::format('png')
+                ->size(300)
+                ->generate($qrData);
+            
+            file_put_contents($qrPath, $qrCode);
+
+            // Verify file was created
+            if (file_exists($qrPath) && filesize($qrPath) > 0) {
+                // Update member with QR code filename
+                $member->qr_code = $qrFileName;
+                $member->save();
+                $message = 'Member added successfully with QR code!';
+            } else {
+                throw new \Exception('QR code file was not created');
+            }
+        } catch (\Exception $qrError) {
+            \Log::error('QR Code generation failed: ' . $qrError->getMessage());
+            $message = 'Member added successfully! (QR code generation skipped)';
+        }
+
+        // 7️⃣ Redirect with success
+        return redirect()
+            ->route('admin.members.index')
+            ->with('success', $message);
+
+    } catch (\Exception $e) {
+        \Log::error('Member creation failed: ' . $e->getMessage() . ' ' . $e->getFile() . ':' . $e->getLine());
+        return back()
+            ->withInput()
+            ->with('error', 'Failed to create member: ' . $e->getMessage());
+    }
+}
+    // View all members
+public function index()
+{
+    $members = Member::orderBy('created_at', 'desc')->get();
+    return view('admin.members.index', compact('members'));
+}
+public function show($id)
+{
+    $member = Member::findOrFail($id);
+    return view('admin.members.show', compact('member'));
+}
+// Show edit form
+public function edit($id)
+{
+    $member = Member::findOrFail($id);
+    return view('admin.members.edit', compact('member'));
+}
+
+// Update member
+public function update(Request $request, $id)
+{
+    $member = Member::findOrFail($id);
+
+    $validated = $request->validate([
+        'full_name'        => 'required|string|max:255',
+        'nic'              => 'nullable|string|max:50',
+        'date_of_birth'    => 'nullable|date',
+        'membership_type'  => 'required|string|max:50',
+        'email'            => 'nullable|email',
+        'phone'            => 'nullable|string|max:20',
+        'address'          => 'nullable|string',
+        'start_date'       => 'required|date',
+        'expiry_date'      => 'required|date|after:start_date',
+        'photo'            => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+    ]);
+
+    // Handle photo upload
+    if ($request->hasFile('photo')) {
+        // Delete old photo if exists
+        if ($member->photo) {
+            Storage::disk('public')->delete($member->photo);
+        }
+        $validated['photo'] = $request->file('photo')->store('members/photos', 'public');
+    }
+
+    $member->update($validated);
+    return redirect()->route('admin.members.index')->with('success', 'Member updated successfully');
+}
+
+// Delete member
+public function destroy($id)
+{
+    $member = Member::findOrFail($id);
+    
+    // Delete photo if exists
+    if ($member->photo) {
+        Storage::disk('public')->delete($member->photo);
+    }
+    
+    // Delete QR code if exists
+    if ($member->qr_code) {
+        Storage::disk('public')->delete('qrcodes/' . $member->qr_code);
+    }
+    
+    $member->delete();
+    return redirect()->route('admin.members.index')->with('success', 'Member deleted successfully');
+}
+}
