@@ -40,7 +40,7 @@ class MemberController extends Controller
             'address'         => 'nullable|string',
             'start_date'      => 'required|date',
             'expiry_date'     => 'required|date|after:start_date',
-            'photo'           => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            'photo'           => 'nullable|image|mimes:jpg,jpeg,png|max:30720',
         ]);
 
         // 2️⃣ Generate Member ID
